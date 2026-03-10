@@ -131,7 +131,7 @@ def get_current_time_api() -> str:
 # Run with streamable HTTP transport
 if __name__ == "__main__":
     mcp.run(transport="streamable-http",
-            port= 4000,
+            port= 2000,
             host= "127.0.0.1",
             middleware=[
                 Middleware(CORSMiddleware, 
