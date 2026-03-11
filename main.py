@@ -4,6 +4,7 @@ FastMCP server with error handling, health checks, and structured logging.
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+import time
 from typing import Optional
 
 # ── Third party ───────────────────────────────────────────────────────────────

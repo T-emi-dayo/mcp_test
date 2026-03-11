@@ -1,6 +1,6 @@
 import json
 import logging
-from time import time
+import time
 
 class JSONFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
