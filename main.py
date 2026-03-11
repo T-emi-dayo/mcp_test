@@ -6,7 +6,7 @@ Run from the repository root:
 """
 
 # MCP Server imports
-from importlib.resources import path
+# from importlib.resources import path
 import os
 
 from fastmcp import FastMCP
@@ -26,6 +26,7 @@ from typing import Optional
 from tools.web_search_tool import DEFAULT_MAX_RESULTS, _get_search_tool
 from tools.calculator_tool import math, SAFE_OPERATORS
 
+load_dotenv()  # Load environment variables from .env file
 
 # Authentication
 tokens = {}
@@ -41,9 +42,6 @@ auth = StaticTokenVerifier(tokens=tokens)
 
 # Create an MCP server
 mcp = FastMCP(name = "Test", auth= auth)
-
-load_dotenv()  # Load environment variables from .env file
-
 
 # Add an addition tool
 @mcp.tool()
@@ -129,9 +127,10 @@ def get_current_time_api() -> str:
         return f"Could not fetch time from API: {e}"
 
 # Run with streamable HTTP transport
+port = int(os.environ.get("PORT", 10000))
 if __name__ == "__main__":
     mcp.run(transport="streamable-http",
-            port= 10000,
+            port= port,
             host= "0.0.0.0",
             middleware=[
                 Middleware(CORSMiddleware, 
