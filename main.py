@@ -1,19 +1,16 @@
 """
 main.py — Server manifest.
 
-This file does three things only:
-  1. Sets up structured logging
-  2. Lists which tools, resources, and prompts are registered
-  3. Starts the server
-
-It contains no business logic, no auth code, no error handling.
-All of that lives in base.py and the individual tool files.
+Three responsibilities only:
+  1. Logging setup
+  2. Tool, resource, and prompt registration
+  3. Start the server
 
 To add a new tool:
-  1. Create tools/your_tool.py  (copy the template from base.py)
-  2. Import the class here
-  3. Call server.register(YourTool)
-  That is all.
+  1. Create tools/your_tool.py — a plain function with typed params and a docstring
+  2. Import it here
+  3. Call server.register() with its scope and any overrides
+  Done.
 """
 
 import json
@@ -21,15 +18,12 @@ import logging
 
 from core.server import BaseMCP
 
-# ── Tools ──────────────────────────────────────────────────────────────────────
-from tools.web_search_tool import WebSearchTool
-from tools.current_time_tool import FetchCurrentTimeTool
+from tools.web_search_tool import search_web
+from tools.current_time_tool import get_current_time
 
-# ── Logging setup ──────────────────────────────────────────────────────────────
-# Configured before anything else so startup events are captured.
+# ── Logging ────────────────────────────────────────────────────────────────────
 
 class _JSONFormatter(logging.Formatter):
-    """Formats every log record as a single-line JSON object."""
     _SKIP = frozenset({
         "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
         "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
@@ -57,19 +51,32 @@ _handler.setFormatter(_JSONFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[_handler])
 
 
-# ── Server setup ───────────────────────────────────────────────────────────────
+# ── Server ─────────────────────────────────────────────────────────────────────
 
 server = BaseMCP(name="MCP Server")
 
-# ── Register tools ─────────────────────────────────────────────────────────────
-# Each register() call validates the tool at startup.
-# If any tool is misconfigured (missing scope, unknown scope, etc.),
-# the server raises immediately here and refuses to start.
 
-server.register(WebSearchTool)
-server.register(FetchCurrentTimeTool)
+# ── Tools ──────────────────────────────────────────────────────────────────────
+# register(function, scope, **overrides)
+# Only specify overrides that differ from the defaults in config.py.
+# Defaults: timeout=10.0, max_retries=3, max_input_length=500
 
-# ── Register resources ─────────────────────────────────────────────────────────
+server.register(
+    search_web,
+    scope       = "web",
+    timeout     = 12.0,    # Search providers can be slow
+    max_retries = 3,
+)
+
+server.register(
+    get_current_time,
+    scope       = "time",
+    timeout     = 6.0,
+    max_retries = 3,
+)
+
+
+# ── Resources ──────────────────────────────────────────────────────────────────
 
 @server.resource("greeting://{name}")
 def get_greeting(name: str) -> str:
@@ -77,7 +84,7 @@ def get_greeting(name: str) -> str:
     return f"Hello, {name}!"
 
 
-# ── Register prompts ───────────────────────────────────────────────────────────
+# ── Prompts ────────────────────────────────────────────────────────────────────
 
 @server.prompt()
 def greet_user(name: str, style: str = "friendly") -> str:

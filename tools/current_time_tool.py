@@ -1,43 +1,31 @@
 """
-Current Time Tool
-Provides accurate real-time date and time information.
-Works offline (system clock) or online (optional API fallback).
+tools/time_tool.py
+
+Plain function. No base class. No infrastructure.
+Registered in main.py with server.register().
 """
 
 import requests
-from datetime import datetime
-from langchain_core.tools import Tool
-
-from tools.base import BaseTool
 
 
-class FetchCurrentTimeTool(BaseTool):
+def get_current_time() -> str:
     """
-    A tool to fetch the current date and time.
-    Uses an online API for accuracy, with a local fallback.
-    """
+    Fetch the current date, time, and timezone from worldtimeapi.org.
 
-    def run(self) -> str:
-        """
-        Fetches the current UTC date and time from an online API.
-        Falls back to local time if request fails.
-        """
-        try:
-            res = requests.get("http://worldtimeapi.org/api/ip", timeout=5)
-            res.raise_for_status()
-            data = res.json()
-            current_time = data.get("datetime", "")
-            timezone = data.get("timezone", "UTC")
-            return f"{current_time} ({timezone})"
-        except Exception:
-            # Fallback to system time if API unavailable
-            return self.get_current_time_local()
-        
-    def get_current_time_local(self) -> str:
-        """
-        Returns the current system date and time in a readable format.
-        Example: "Tuesday, October 21, 2025, 16:04:32"
-        """
-        return datetime.now().strftime("%A, %B %d, %Y, %H:%M:%S")
+    Args:
+        None
+
+    Returns:
+        On success: datetime string with timezone,
+                    e.g. "2026-03-12T14:33:21.123456+00:00 (UTC)"
+        On error:   string beginning with "ERROR ["
+    """
+    response = requests.get(
+        "http://worldtimeapi.org/api/ip",
+        timeout=5,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return f"{data.get('datetime', '')} ({data.get('timezone', 'UTC')})"
     
     

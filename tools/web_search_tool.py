@@ -3,7 +3,6 @@ import logging
 import os
 from functools import lru_cache
 from typing import Optional
-from base import BaseTool
 
 from langchain_google_community import GoogleSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
@@ -163,51 +162,23 @@ def _get_search_tool() -> WebSearchTool:
     return WebSearchTool()
 
 
-"""
-tools/web_search_tool.py
-
-The underlying _get_search_tool() and DEFAULT_MAX_RESULTS stay exactly as
-they were — we are not touching the search implementation.
-We are only changing how the tool is declared and registered.
-"""
-
-
-
-class WebSearchTool(BaseTool):
+def search_web(
+    query:        str,
+    max_results:  int           = DEFAULT_MAX_RESULTS,
+    geo_focus:    Optional[str] = None,
+    time_horizon: Optional[str] = None,
+) -> list[dict]:
     """
-    Searches the public web and returns results.
+    Search the web and return matching results.
 
-    Scope:   web
-    Timeout: 12s  (search providers can be slow; slightly above default)
-    Retries: 3    (transient network failures are common with search APIs)
+    Args:
+        query:        The search query. Max 500 characters.
+        max_results:  Number of results to return. Between 1 and 20. Default: 5.
+        geo_focus:    Optional geographic focus, e.g. "Nigeria", "global".
+        time_horizon: Optional time filter, e.g. "last_30_days", "last_5_years".
+
+    Returns:
+        On success: list of dicts, each with keys: title, link, snippet
+        On error:   string beginning with "ERROR ["
     """
-
-    required_scope   = "web"
-    timeout          = 12.0
-    max_retries      = 3
-    max_input_length = 500
-
-    def run(
-        self,
-        query:        str,
-        max_results:  int           = DEFAULT_MAX_RESULTS,
-        geo_focus:    Optional[str] = None,
-        time_horizon: Optional[str] = None,
-    ) -> list[dict]:
-        """
-        Search the web and return matching results.
-
-        Args:
-            query:        The search query. Max 500 characters.
-            max_results:  Number of results to return. Between 1 and 20.
-                          Default: 5.
-            geo_focus:    Optional geographic focus, e.g. "Nigeria", "global".
-                          Biases results toward content from that region.
-            time_horizon: Optional time filter, e.g. "last_30_days",
-                          "last_5_years". Limits results to that window.
-
-        Returns:
-            On success: list of dicts, each with keys: title, link, snippet
-            On error:   string beginning with "ERROR ["
-        """
-        return _get_search_tool().search(query, max_results, geo_focus, time_horizon)
+    return _get_search_tool().search(query, max_results, geo_focus, time_horizon)
