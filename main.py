@@ -7,7 +7,7 @@ Three responsibilities only:
   3. Start the server
 
 To add a new tool:
-  1. Create tools/your_tool.py — a plain function with typed params and a docstring
+  1. Create tools/your_tool.py — a plain function, typed params, docstring
   2. Import it here
   3. Call server.register() with its scope and any overrides
   Done.
@@ -16,12 +16,20 @@ To add a new tool:
 import json
 import logging
 
-from core.server import BaseMCP
+# Import Base MCP
+from core.base import BaseMCP
 
-from tools.web_search_tool import search_web
+# Tool Imports
+# from tools.calculator_tool import safe_eval_math
 from tools.current_time_tool import get_current_time
+from tools.web_search_tool import search_web
 
 # ── Logging ────────────────────────────────────────────────────────────────────
+# Structured JSON logging. Configured before anything else runs.
+#
+# Note: StructuredLoggingMiddleware handles MCP request/response logging.
+# This formatter handles everything outside the request lifecycle —
+# startup, registration, warnings, and errors from BaseMCP itself.
 
 class _JSONFormatter(logging.Formatter):
     _SKIP = frozenset({
@@ -58,21 +66,27 @@ server = BaseMCP(name="MCP Server")
 
 # ── Tools ──────────────────────────────────────────────────────────────────────
 # register(function, scope, **overrides)
-# Only specify overrides that differ from the defaults in config.py.
-# Defaults: timeout=10.0, max_retries=3, max_input_length=500
+# Defaults (from config.py): timeout=10.0, max_input_length=500
 
 server.register(
     search_web,
-    scope       = "web",
-    timeout     = 12.0,    # Search providers can be slow
-    max_retries = 3,
+    scope            = "web",
+    timeout          = 12.0,   # Search providers can be slow
+    max_input_length = 500,
 )
+
+# server.register(
+#     safe_eval_math,
+#     scope            = "compute",
+#     timeout          = 5.0,    # Computation should be fast
+#     max_input_length = 200,    # Long expressions are a red flag
+# )
 
 server.register(
     get_current_time,
-    scope       = "time",
-    timeout     = 6.0,
-    max_retries = 3,
+    scope   = "time",
+    timeout = 6.0,
+    # max_input_length not set — this tool has no string parameters
 )
 
 
