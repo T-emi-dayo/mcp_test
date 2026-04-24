@@ -33,9 +33,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier, require_scopes
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.server.middleware.logging import (
-    StructuredLoggingMiddleware,
-)
+from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
 from fastmcp.server.middleware.error_handling import RetryMiddleware
 from fastmcp.server.middleware.timing import TimingMiddleware
 from fastmcp.exceptions import ToolError

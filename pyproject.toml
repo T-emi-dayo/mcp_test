@@ -15,4 +15,5 @@ dependencies = [
     "pyproject>=1!0.1.2",
     "sqlalchemy>=2.0.47",
     "stytch>=14.2.0",
+    "trafilatura>=2.0.0",
 ]

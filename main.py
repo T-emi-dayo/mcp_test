@@ -20,8 +20,9 @@ import logging
 from core.base import BaseMCP
 
 # Tool Imports
-# from tools.calculator_tool import safe_eval_math
 from tools.current_time_tool import get_current_time
+from tools.news_search_tool import search_news
+from tools.web_scrapping_tool import scrape_webpage
 from tools.web_search_tool import search_web
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -75,18 +76,25 @@ server.register(
     max_input_length = 500,
 )
 
-# server.register(
-#     safe_eval_math,
-#     scope            = "compute",
-#     timeout          = 5.0,    # Computation should be fast
-#     max_input_length = 200,    # Long expressions are a red flag
-# )
-
 server.register(
     get_current_time,
     scope   = "time",
     timeout = 6.0,
     # max_input_length not set — this tool has no string parameters
+)
+
+server.register(
+    search_news,
+    scope            = "web",
+    timeout          = 12.0,
+    max_input_length = 500,
+)
+
+server.register(
+    scrape_webpage,
+    scope            = "web",
+    timeout          = 20.0,   # page fetch + extraction can be slow
+    max_input_length = 500,
 )
 
 

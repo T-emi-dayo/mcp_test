@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     )
     
     # Web Search
-    WS_MAX_RESULTS : int = 5
+    WS_MAX_RESULTS: int = 5
+
+    # News Search
+    NEWS_BASE_URL: str = "https://newsapi.org/v1"
+    NEWS_TIMEOUT: int = 10
+    NEWS_MAX_RESULTS: int = 5
+    NEWS_API_KEY: str = ""   # optional — empty string means DDGS-only fallback
     
     
     class Config:

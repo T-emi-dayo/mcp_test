@@ -1,8 +1,7 @@
 """
 web_search_tool.py
 ==================
-A clean, dependency-light web search tool with Google Custom Search and
-DuckDuckGo fallback.
+Web search with Google Custom Search (primary) and DuckDuckGo (fallback).
 
 Backends
 --------
@@ -10,11 +9,14 @@ Backends
             Requires GOOGLE_API_KEY + GOOGLE_SEARCH_ENGINE_ID env vars.
             Docs: https://developers.google.com/custom-search/v1/reference/rest/v1/cse/list
 
-- DuckDuckGo : `duckduckgo-search` library (DDGS class), no API key required.
+- DuckDuckGo : duckduckgo-search library (DDGS), no API key required.
                Docs: https://pypi.org/project/duckduckgo-search/
-               Install: pip install duckduckgo-search httpx
 
-No LangChain. No intermediate wrappers.
+Fallback behaviour
+------------------
+Google is selected when both env vars are present. If Google fails at
+runtime (quota, outage, HTTP error), the call transparently falls back to
+DuckDuckGo so callers always receive results.
 """
 
 from __future__ import annotations
@@ -27,9 +29,9 @@ from typing import Optional
 import httpx
 from duckduckgo_search import DDGS
 from duckduckgo_search.exceptions import DuckDuckGoSearchException, RatelimitException, TimeoutException
-from pydantic import BaseModel, Field
 
 from core.config import settings
+from schemas.Tool_Result import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_API_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
 DEFAULT_MAX_RESULTS: int = settings.WS_MAX_RESULTS
-HTTP_TIMEOUT: int = 10  # seconds
+HTTP_TIMEOUT: int = 10
 
 
 # ============================================================================
@@ -57,7 +59,6 @@ class TimeHorizon(str, Enum):
 
     Google dateRestrict syntax : d[n], w[n], m[n], y[n]
     DuckDuckGo timelimit       : d, w, m, y
-    Docs: https://developers.google.com/custom-search/v1/reference/rest/v1/cse/list
     """
     LAST_DAY   = "last_day"
     LAST_WEEK  = "last_week"
@@ -67,31 +68,9 @@ class TimeHorizon(str, Enum):
 
 
 # ============================================================================
-# PYDANTIC MODELS
-# ============================================================================
-
-class SearchResult(BaseModel):
-    """A single normalised search result."""
-    title:   str            = Field(description="Result title")
-    url:     str            = Field(description="Result URL")
-    snippet: str            = Field(description="Short description or excerpt")
-    source:  SearchBackend  = Field(description="Which backend returned this result")
-    date:    Optional[str]  = Field(default=None, description="Publication date if available")
-
-
-class SearchResponse(BaseModel):
-    """The full response returned by search_web()."""
-    query:         str               = Field(description="The original search query")
-    backend_used:  SearchBackend     = Field(description="Backend that fulfilled the request")
-    total_results: int               = Field(description="Number of results returned")
-    results:       list[SearchResult] = Field(default_factory=list)
-
-
-# ============================================================================
 # TIME HORIZON MAPPINGS
 # ============================================================================
 
-# Google dateRestrict: d[n], w[n], m[n], y[n]
 _GOOGLE_TIME_MAP: dict[TimeHorizon, str | None] = {
     TimeHorizon.LAST_DAY:   "d1",
     TimeHorizon.LAST_WEEK:  "w1",
@@ -100,7 +79,6 @@ _GOOGLE_TIME_MAP: dict[TimeHorizon, str | None] = {
     TimeHorizon.ALL_TIME:   None,
 }
 
-# DuckDuckGo timelimit: d, w, m, y
 _DDG_TIME_MAP: dict[TimeHorizon, str | None] = {
     TimeHorizon.LAST_DAY:   "d",
     TimeHorizon.LAST_WEEK:  "w",
@@ -119,23 +97,21 @@ def _google_search(
     max_results: int,
     geo_focus: Optional[str],
     time_horizon: TimeHorizon,
-) -> list[SearchResult]:
+) -> list[ToolResult]:
     """
     Call the Google Custom Search JSON API directly via httpx.
 
-    Key API constraints (from official docs):
-      - `num`         : results per request — valid range 1-10 (max 10).
-      - `start`       : 1-based pagination index; max useful value is 91
-                        since start + num cannot exceed 101.
-      - `gl`          : 2-letter ISO country code to geo-bias results.
-      - `dateRestrict`: d1/w1/m1/y1 for time filtering.
-      - Response body : items[].{title, link, snippet}
+    Key API constraints:
+      - num   : results per request, valid range 1-10.
+      - start : 1-based pagination; max useful value is 91 (start + num <= 101).
+      - gl    : 2-letter ISO country code for geo-bias.
+      - dateRestrict : d1/w1/m1/y1 for time filtering.
     """
     api_key   = os.environ["GOOGLE_API_KEY"]
     engine_id = os.environ["GOOGLE_SEARCH_ENGINE_ID"]
 
-    results: list[SearchResult] = []
-    start = 1  # Google pagination is 1-based
+    results: list[ToolResult] = []
+    start = 1
 
     while len(results) < max_results:
         batch = min(10, max_results - len(results))
@@ -149,7 +125,6 @@ def _google_search(
         }
 
         if geo_focus:
-            # gl expects a 2-letter ISO country code
             params["gl"] = geo_focus.lower()[:2]
 
         date_restrict = _GOOGLE_TIME_MAP.get(time_horizon)
@@ -162,20 +137,17 @@ def _google_search(
 
         items = response.json().get("items") or []
         if not items:
-            break  # No more results available
+            break
 
         for item in items:
-            results.append(SearchResult(
+            results.append(ToolResult(
                 title   = item.get("title", "").strip(),
                 url     = item.get("link", ""),
                 snippet = item.get("snippet", "").strip().replace("\n", " "),
                 source  = SearchBackend.GOOGLE,
-                date    = None,  # Google CSE does not expose a date field
             ))
 
         start += len(items)
-
-        # Google hard cap: start + num must not exceed 101
         if start > 91:
             break
 
@@ -191,16 +163,13 @@ def _ddg_search(
     max_results: int,
     geo_focus: Optional[str],
     time_horizon: TimeHorizon,
-) -> list[SearchResult]:
+) -> list[ToolResult]:
     """
-    Search via duckduckgo-search (DDGS class).
+    Search via duckduckgo-search (DDGS).
 
-    Key API notes (from official docs):
-      - DDGS().text() → List[Dict] with keys: title, href, body
-      - `region`    : "{country}-{lang}", e.g. "wt-wt" (worldwide), "us-en", "ng-en"
-      - `timelimit` : "d", "w", "m", "y" — or None for all time
-      - `backend`   : "auto" aggregates across available backends
-      - Exception types: RatelimitException, TimeoutException < DuckDuckGoSearchException
+    - region    : "{country}-en", e.g. "us-en", "ng-en"; "wt-wt" for worldwide.
+    - timelimit : "d", "w", "m", "y" or None.
+    - backend   : "auto" aggregates across available backends.
     """
     region    = f"{geo_focus.lower()}-en" if geo_focus else "wt-wt"
     timelimit = _DDG_TIME_MAP.get(time_horizon)
@@ -217,19 +186,18 @@ def _ddg_search(
     )
 
     return [
-        SearchResult(
+        ToolResult(
             title   = item.get("title", "").strip(),
             url     = item.get("href", ""),
             snippet = item.get("body", "").strip(),
             source  = SearchBackend.DUCKDUCKGO,
-            date    = None,  # DDGS.text() does not return a date field
         )
         for item in (raw or [])
     ]
 
 
 # ============================================================================
-# PUBLIC CONVENIENCE FUNCTION
+# PUBLIC TOOL FUNCTION
 # ============================================================================
 
 def search_web(
@@ -237,47 +205,33 @@ def search_web(
     max_results: int = DEFAULT_MAX_RESULTS,
     geo_focus: Optional[str] = None,
     time_horizon: TimeHorizon = TimeHorizon.ALL_TIME,
-) -> SearchResponse:
+) -> list[ToolResult]:
     """
-    Search the web and return a structured SearchResponse.
+    Search the web and return a list of ToolResult objects.
 
-    Selects Google Custom Search if GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID
-    are present in the environment. Falls back to DuckDuckGo otherwise.
+    Uses Google Custom Search when GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID
+    are set. Falls back to DuckDuckGo if the keys are absent or if Google
+    fails at runtime (quota, outage, HTTP error).
 
     Args:
         query:
             Search query string. Must not be empty.
-
         max_results:
-            Maximum number of results. Google is capped at 100 total (10 per
-            page, max 10 pages). DuckDuckGo has no hard cap but quality
-            degrades beyond ~50. Defaults to settings.WS_MAX_RESULTS.
-
+            Maximum number of results to return. Defaults to settings.WS_MAX_RESULTS.
         geo_focus:
-            Optional 2-letter ISO country code to bias results geographically.
-            Examples: "ng" (Nigeria), "us" (USA), "gb" (UK).
-            Pass None for worldwide results (default).
-
+            Optional 2-letter ISO country code to bias results (e.g. "ng", "us").
+            Pass None for worldwide results.
         time_horizon:
-            Time window for results. Use the TimeHorizon enum.
-            Defaults to TimeHorizon.ALL_TIME (no restriction).
+            Time window for results. Defaults to TimeHorizon.ALL_TIME.
 
     Returns:
-        SearchResponse — contains query, backend_used, total_results,
-        and a list of SearchResult Pydantic models.
+        list[ToolResult] — each item has title, url, snippet, source,
+        and a metadata dict with query context.
 
     Raises:
-        ValueError               : query is empty.
-        httpx.HTTPStatusError    : Google API returned a non-2xx response.
-        RatelimitException       : DuckDuckGo rate limit exceeded.
-        TimeoutException         : Request timed out.
-        DuckDuckGoSearchException: Any other DuckDuckGo error.
-
-    Example:
-        >>> from web_search_tool import search_web, TimeHorizon
-        >>> response = search_web("AI regulation Nigeria", geo_focus="ng", time_horizon=TimeHorizon.LAST_MONTH)
-        >>> for r in response.results:
-        ...     print(r.title, r.url)
+        ValueError : query is empty.
+        RatelimitException : DuckDuckGo rate limit exceeded (no fallback available).
+        DuckDuckGoSearchException : DDG backend failure after Google fallback.
     """
     if not query or not query.strip():
         raise ValueError("Query cannot be empty")
@@ -291,17 +245,21 @@ def search_web(
         os.getenv("GOOGLE_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID")
     )
 
+    backend_used = SearchBackend.DUCKDUCKGO
+    results: list[ToolResult] = []
+
     if google_ready:
         logger.debug("Backend selected: Google Custom Search")
         try:
             results = _google_search(query, max_results, geo_focus, time_horizon)
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Google API HTTP error {e.response.status_code}: {e.response.text}")
-            raise
+            backend_used = SearchBackend.GOOGLE
         except Exception as e:
-            logger.error(f"Google search failed ({type(e).__name__}): {e}")
-            raise
-    else:
+            logger.warning(
+                f"Google search failed ({type(e).__name__}: {e}), falling back to DuckDuckGo"
+            )
+            # Fall through to DuckDuckGo below
+
+    if not results:
         logger.debug("Backend selected: DuckDuckGo")
         try:
             results = _ddg_search(query, max_results, geo_focus, time_horizon)
@@ -315,9 +273,14 @@ def search_web(
             logger.error(f"DuckDuckGo search failed: {e}")
             raise
 
-    return SearchResponse(
-        query         = query,
-        backend_used  = SearchBackend.GOOGLE if google_ready else SearchBackend.DUCKDUCKGO,
-        total_results = len(results),
-        results       = results,
-    )
+    shared_meta = {
+        "query":        query,
+        "backend":      backend_used.value,
+        "total_results": len(results),
+        "geo_focus":    geo_focus,
+        "time_horizon": time_horizon.value,
+    }
+    for r in results:
+        r.metadata = shared_meta
+
+    return results
