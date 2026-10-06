@@ -1,17 +1,17 @@
-from main import search_web
+from trafilatura import fetch_url, extract
 
-def main():
-    # Test the search_web function
-    results = search_web("latest news on AI", max_results=5, geo_focus="global", time_horizon="last_30_days")
-    print("Search Results:" + "\n"+ results)
-    for idx, result in enumerate(results):
-        print(f"Result {idx + 1}:")
-        print(f"Title: {result['title']}")
-        print(f"Link: {result['link']}")
-        print(f"Snippet: {result['snippet']}\n")
-    
-if main.__name__ == "__main__":
-    # Test the search_web function
-    main()
+# 1. Choose a URL to scrape
+url = 'https://zapier.com/blog/ai-prompt-templates/'
 
-        
+# 2. Download the HTML content
+downloaded = fetch_url(url)
+
+# 3. Extract the main text (it returns None if extraction fails)
+result = extract(downloaded, output_format= "json")
+
+if result:
+    print(f"Successfully extracted {len(result)} characters.")
+    print("-" * 30)
+    print(result)
+else:
+    print("Could not extract content from this URL.")

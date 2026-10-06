@@ -1,7 +1,7 @@
 [project]
 name = "mcp-servers"
 version = "0.1.0"
-description = "Add your description here"
+description = "Authenticated, scope-based MCP server exposing web search, news, scraping and time tools to AI agents"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
